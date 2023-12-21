@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>daje</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Arial', sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #countdown-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #fff;
+        }
+
+        #countdown-title {
+            font-size: 2em;
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+
+        #countdown {
+            font-size: 3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 10px;
+            display: inline-block;
+            color: #ffd700;
+        }
+
+        #minesweeper-container {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: #555;
+            border: 1px solid #777;
+            margin: 1px;
+            display: inline-block;
+            font-size: 16px;
+            text-align: center;
+            line-height: 30px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .cell.hidden {
+            background-color: #888;
+        }
+
+        .cell.mine {
+            background-color: #ff4444;
+        }
+
+        .cell.flagged::after {
+            content: '\u2691'; /* Unicode flag character */
+        }
+
+        .reset {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #333;
+            border: none;
+            color: #ffd700;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        document.body.appendChild(canvas);
+        const stars = [];
+        function createStar() {
+            return {
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2,
+                speed: Math.random() * 0.5
+            };
+        }
+        for (let i = 0; i < 100; i++) {
+            stars.push(createStar());
+        }
+        function animateStars() {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            stars.forEach(star => {
+                context.fillStyle = '#fff';
+                context.beginPath();
+                context.arc(star.x, star.y, star.size, 0, 2 * Math.PI);
+                context.fill();
+                star.y += star.speed;
+                if (star.y > canvas.height) {
+                    star.y = 0;
+                }
+            });
+            requestAnimationFrame(animateStars);
+        }
+        animateStars();
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        const countdownContainer = document.createElement('div');
+        countdownContainer.id = 'countdown-container';
+        document.body.appendChild(countdownContainer);
+
+        const countdownTitle = document.createElement('div');
+        countdownTitle.id = 'countdown-title';
+        countdownTitle.textContent = 'Il ritorno del fazzo';
+        countdownContainer.appendChild(countdownTitle);
+
+        const countdownDiv = document.createElement('div');
+        countdownDiv.id = 'countdown';
+        countdownContainer.appendChild(countdownDiv);
+
+        const minesweeperContainer = document.createElement('div');
+        minesweeperContainer.id = 'minesweeper-container';
+        document.body.appendChild(minesweeperContainer);
+
+        function updateCountdown() {
+            const currentTime = new Date();
+            const targetDate = new Date(currentTime.getFullYear(), 11, 25, 11, 0, 0); // December 25th at 11:00 AM
+            if (currentTime > targetDate) {
+                countdownDiv.innerHTML = 'Il fazzo e\' tornato!';
+            } else {
+                const timeDifference = targetDate - currentTime;
+                const days = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((timeDifference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((timeDifference % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((timeDifference % (1000 * 60)) / 1000);
+                countdownDiv.innerHTML = `${days} : ${hours} : ${minutes} : ${seconds}`;
+            }
+        }
+
+        function showMinesweeper() {
+            countdownContainer.style.display = 'none';
+            minesweeperContainer.style.display = 'block';
+            document.removeEventListener('click', showMinesweeper);
+            document.removeEventListener('touchend', showMinesweeper);
+        }
+
+        function resetGame() {
+            document.getElementById('minesweeper-container').innerHTML = '';
+            document.getElementById('countdown-container').style.display = 'block';
+            countdownDiv.innerHTML = ''; // Reset countdown text
+            clearInterval(countdownInterval);
+            initializeBoard();
+            renderBoard();
+        }
+
+        function revealEmptyCells(row, col) {
+            for (let i = Math.max(0, row - 1); i <= Math.min(row + 1, boardSize - 1); i++) {
+                for (let j = Math.max(0, col - 1); j <= Math.min(col + 1, boardSize - 1); j++) {
+                    if (!(i === row && j === col)) {
+                        revealCell(i, j);
+                    }
+                }
+            }
+        }
+
+        function handleCellClick(event) {
+            if (gameover || gamewon) {
+                return; // Exit early if the game is over or won
+            }
+
+            const row = parseInt(event.target.dataset.row);
+            const col = parseInt(event.target.dataset.col);
+
+            if (minesCount === 0) {
+                plantMines(row, col);
+            }
+
+            if (board[row][col].flagged) {
+                return;
+            }
+
+            if (board[row][col].mine) {
+                revealMines();
+                alert('Game Over! You hit a mine.');
+                gameover = true;
+                showResetButton();
+            } else {
+                revealCell(row, col);
+                if (checkWin()) {
+                    alert('Congratulations! You won!');
+                    gamewon = true;
+                    showResetButton();
+                }
+            }
+        }
+
+        function handleCellRightClick(event) {
+            if (gameover || gamewon) {
+                return; // Exit early if the game is over or won
+            }
+
+            event.preventDefault();
+            const row = parseInt(event.target.dataset.row);
+            const col = parseInt(event.target.dataset.col);
+
+            if (!board[row][col].revealed) {
+                board[row][col].flagged = !board[row][col].flagged;
+                event.target.classList.toggle('flagged', board[row][col].flagged);
+            }
+        }
+
+        function renderBoard() {
+            const minesweeper = document.getElementById('minesweeper-container');
+
+            for (let i = 0; i < boardSize; i++) {
+                for (let j = 0; j < boardSize; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell hidden';
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+                    cell.addEventListener('click', handleCellClick);
+                    cell.addEventListener('contextmenu', handleCellRightClick);
+
+                    minesweeper.appendChild(cell);
+                }
+            }
+        }
+
+        function initializeBoard() {
+            for (let i = 0; i < boardSize; i++) {
+                board[i] = [];
+                for (let j = 0; j < boardSize; j++) {
+                    board[i][j] = { mine: false, revealed: false, flagged: false, count: 0 };
+                }
+            }
+        }
+
+        function plantMines(startRow, startCol) {
+            while (minesCount < totalMines) {
+                const row = Math.floor(Math.random() * boardSize);
+                const col = Math.floor(Math.random() * boardSize);
+
+                if (!board[row][col].mine && !(Math.abs(row - startRow) <= 1 && Math.abs(col - startCol) <= 1)) {
+                    board[row][col].mine = true;
+                    incrementAdjacentCells(row, col);
+                    minesCount++;
+                }
+            }
+        }
+
+        function incrementAdjacentCells(row, col) {
+            for (let i = Math.max(0, row - 1); i <= Math.min(row + 1, boardSize - 1); i++) {
+                for (let j = Math.max(0, col - 1); j <= Math.min(col + 1, boardSize - 1); j++) {
+                    if (!(i === row && j === col)) {
+                        board[i][j].count++;
+                    }
+                }
+            }
+        }
+
+        function revealCell(row, col) {
+            const cell = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+
+            if (!board[row][col].revealed && !board[row][col].flagged) {
+                board[row][col].revealed = true;
+                cell.classList.remove('hidden');
+                cell.textContent = board[row][col].count === 0 ? '' : board[row][col].count;
+
+                if (board[row][col].count === 0) {
+                    revealEmptyCells(row, col);
+                }
+            }
+        }
+
+        function revealMines() {
+            for (let i = 0; i < boardSize; i++) {
+                for (let j = 0; j < boardSize; j++) {
+                    if (board[i][j].mine) {
+                        const cell = document.querySelector(`.cell[data-row="${i}"][data-col="${j}"]`);
+                        cell.classList.remove('hidden');
+                        cell.classList.add('mine');
+                    }
+                }
+            }
+        }
+
+        function checkWin() {
+            for (let i = 0; i < boardSize; i++) {
+                for (let j = 0; j < boardSize; j++) {
+                    if (!board[i][j].mine && !board[i][j].revealed) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function showResetButton() {
+            const resetButton = document.createElement('button');
+            resetButton.className = 'reset';
+            resetButton.addEventListener('click', resetGame);
+
+            document.getElementById('minesweeper-container').appendChild(resetButton);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const countdownInterval = setInterval(updateCountdown, 1000);
+            document.addEventListener('click', showMinesweeper);
+            document.addEventListener('touchend', showMinesweeper);
+        });
+    </script>
+</body>
+</html>
